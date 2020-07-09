@@ -28,17 +28,21 @@ def logging_decorator(func):
     return wrapper_decorator 
 
 class CyberFlood:    
-    def __init__(self, userName, userPassword, controllerAddress, loglevel="INFO", logpath=None):
+    def __init__(self, username, password, controller_address, perform_commands=True, log_level="INFO", log_path=None):
 
         requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
         arguments = locals()
 
-        self.userName = userName
-        self.userPassword = userPassword
-        self.controllerAddress = "https://" + controllerAddress + "/api/v2"
+        self.username = username
+        self.password = password
+        self.controller_address = "https://" + controller_address + "/api/v2"
+
+        # Enabling the "Perform Commands" adds a fixed amount initialization overhead (time) for the CyberFlood API.
+        self.perform_commands = perform_commands
+
         self.__bearerToken = None
-        self.__isLogged = False
+        #self.__isLogged = False
         self.__session = requests.session()
         self.__session.verify = False
     
@@ -52,36 +56,32 @@ class CyberFlood:
         defaultlogpath = os.path.expanduser(defaultlogpath)
         
         # The STC_LOG_OUTPUT_DIRECTORY will override the default path.
-        self.logpath = os.getenv("CF_LOG_OUTPUT_DIRECTORY", defaultlogpath)
+        self.log_path = os.getenv("CF_LOG_OUTPUT_DIRECTORY", defaultlogpath)
 
-        # The logpath argument will override everything.
-        if logpath:
-            self.logpath = logpath
+        # The log_path argument will override everything.
+        if log_path:
+            self.log_path = log_path
 
-        self.logpath = os.path.abspath(self.logpath)
-        self.logfile = os.path.join(self.logpath, "cf_restapi.log")        
+        self.log_path = os.path.abspath(self.log_path)
+        self.log_file = os.path.join(self.log_path, "cf_restapi.log")        
 
-        if not os.path.exists(self.logpath):
-            os.makedirs(self.logpath)
+        if not os.path.exists(self.log_path):
+            os.makedirs(self.log_path)
 
-        if loglevel.upper() == "ERROR":
-            self.loglevel = logging.ERROR
-        elif loglevel.upper() == "WARNING":
-            self.loglevel = logging.WARNING
-        elif loglevel.upper() == "INFO":
-            self.loglevel = logging.INFO
-        elif loglevel.upper() == "DEBUG":
-            self.loglevel = logging.DEBUG
+        if log_level.upper() == "ERROR":
+            self.log_level = logging.ERROR
+        elif log_level.upper() == "WARNING":
+            self.log_level = logging.WARNING
+        elif log_level.upper() == "INFO":
+            self.log_level = logging.INFO
+        elif log_level.upper() == "DEBUG":
+            self.log_level = logging.DEBUG
         else:
-            self.loglevel = logging.INFO
+            self.log_level = logging.INFO
 
-        logging.basicConfig(filename=self.logfile, filemode="w", level=self.loglevel, format="%(asctime)s %(message)s")
+        logging.basicConfig(filename=self.log_file, filemode="w", level=self.log_level, format="%(asctime)s %(message)s")
 
         # The logger is now ready.        
-
-        #print("DEBUG: Using PPRINT")
-        #self.pp = pprint.PrettyPrinter(indent=2)
-
         logging.info("Executing __init__: " + str(arguments))
 
         # logging.basicConfig()
@@ -90,115 +90,141 @@ class CyberFlood:
         # requests_log.setLevel(logging.DEBUG)
         requests_log.propagate = True
 
-        # Authenticate.
-        response = self.__session.post(self.controllerAddress + '/token',
-                                       data={'email': self.userName,
-                                             'password': self.userPassword})
+        # Authenticate. This will allow all subsequent calls to use the token.
+        response = self.__session.post(self.controller_address + '/token', data={'email': self.username, 'password': self.password})
 
         if response.status_code == 201:
             self.__bearerToken = json.loads(response.text)['token']
             self.__session.headers.update(Authorization='Bearer ' + self.__bearerToken)
-            self.__isLogged = True
+            #self.__isLogged = True
 
-        # Download the ReST API specification.
-        specfilename = self.download_file("/documentation/openapi.yaml", save_path=self.logpath)
-        self.api_spec = self._convert_yaml_to_dict(specfilename)
-        os. remove(specfilename)
+        if self.perform_commands:
+            # Perform Commands are enabled. We need to download the OpenAPI.yaml file and 
+            # generate the class objects for each command.
 
-        self._generate_classes()            
+            # Download the ReST API specification for the controller.
+            specfilename = self.get("/documentation/openapi.yaml")
+            self.api_spec = self._convert_yaml_to_dict(specfilename)
+            # We don't need the openapi.yaml file after this point.
+            os.remove(specfilename)
+
+            self._generate_classes()   
 
         return    
 
     @logging_decorator
     def post(self, url, payload=None):
-        result = self.command("post", url, payload)
-        return result.json()
+        result = self.exec("post", url, payload)
+        return result
 
     @logging_decorator
     def delete(self, url, payload=None):
-        result = self.command("delete", url, payload)
+        result = self.exec("delete", url, payload)
         return 
 
     @logging_decorator
     def put(self, url, payload=None):              
-        result = self.command("put", url, payload)
-        return result.json()
+        result = self.exec("put", url, payload)
+        return result
 
     @logging_decorator
     def get(self, url, payload=None):
-        result = self.command("get", url, payload)
-        return result.json()
+        result = self.exec("get", url, payload)
+        return result
 
     @logging_decorator
-    def exec(self, command_name, payload=None, **kwargs):
+    def perform(self, command_name, command_type=None, payload=None, **kwargs):        
 
-        command = self.commands.get(command_name, None)
+        if not self.perform_commands:
+            raise Exception("Perform Commands are not enabled. Use the perform_commands=True argument when initializing the CyberFlood client.")        
 
-        if not command:
+        if command_name not in self.commands.keys():
             raise Exception("The command '" + command_name + "' is not valid.")        
 
-        result = command.exec(payload, **kwargs)            
+        command_list = list(self.commands[command_name].keys())
+
+        if len(command_list) > 1:
+            if not command_type:
+                raise Exception("You must specify the type for this command.")                    
+        else:            
+            command_type = command_list[0]
+
+        command = self.commands[command_name][command_type]
+
+        result = command.perform(payload, **kwargs)            
 
         return result
 
-    def command(self, action, url, *args):
+    #def exec(self, httpverb, url, *args):        
+    def exec(self, httpverb, url, payload=None, filters=None, *args):        
 
-        url = self.controllerAddress + url
+        url = self.controller_address + url
+
+        # Extract any filters and add them to the URL.
+        url, args = self._get_filters(url, args)
 
         payload = {}
         if args:
             payload = json.dumps(args[0])
 
-        action = action.lower()
-        if action == "get":
+        httpverb = httpverb.lower()
+
+        if httpverb == "get":
             response = self.__session.get(url)
-        elif action == "post":            
+        elif httpverb == "post":            
             response = self.__session.post(url, data=payload, headers={'Content-Type': 'application/json'}, verify=False)
-        elif action == "put":
+        elif httpverb == "put":
             response = self.__session.put(url, data=payload, headers={'Content-Type': 'application/json'}, verify=False)            
-        elif action == "delete":
+        elif httpverb == "delete":
             response = self.__session.delete(url)
         else:
-            raise Exception("ERROR: The command '" + action + "' is not valid.")
+            raise Exception("ERROR: The command '" + httpverb + "' is not valid.")
 
         if not response.ok:
             self._process_error(response)
+        
+        return_value = None
 
-        return response 
+        content_disposition = response.headers.get("content-disposition")
 
-    def download_file(self, source, save_path=None):
-        """Download a file.
+        if response.headers.get("content-type") == "application/json":
+            return_value = response.json()
+        elif content_disposition and re.match("attachment", content_disposition, flags=re.I):
+            # The content-disposition will look something like this:
+            # attachment; filename="event.log"
+            match = re.search("filename=\"(.+)\"", content_disposition, flags=re.I)            
+            filename = match.group(1)
+            return_value = self._save_file(response, filename)
+        elif response.headers.get("content-type") == "application/octet-stream":
+            # This is likely a file that needs to be downloaded.
+            if url.find('/'):
+                # Extract the filename from the URL.
+                filename = url.rsplit('/', 1)[1]
+            else:
+                filename = "unknown_file"
+            
+            return_value = self._save_file(response, filename)
+        else:
+            logging.debug(str(response.headers.get))
+            raise Exception("ERROR: Unknown response type (" + response.headers.get("content-type") + ").")
 
-        If a timeout defined, it is not a time limit on the entire download;
-        rather, an exception is raised if the server has not issued a response
-        for timeout seconds (more precisely, if no bytes have been received on
-        the underlying socket for timeout seconds). If no timeout is specified
-        explicitly, requests do not time out.
+        return return_value
 
-        """
-        url = self.controllerAddress + source
+    def _save_file(self, response, filename, directory=None):        
+        # Save the attached file to the current directory (or possibly a subdirectory).
 
-        try:
-            response = self.__session.get(url, stream=True, verify=False, timeout=10)
+        if directory:
+            filename = os.path.join(directory, filename)
 
-            # print(rsp.request.headers)
-            # print(rsp.headers)
-        except requests.exceptions.ConnectionError as e:
-            raise Exception("Connection error during download.")
+        filename = os.path.abspath(filename)
+        path = os.path.dirname(filename)
 
-        if response.status_code >= 300:
-            self._process_error(response)
-
-        if os.path.isabs(source):
-            # The source needs to be a relative path.
-            source = "." + source
-
-        save_file = os.path.abspath(os.path.join(save_path, source))
-        os.makedirs(os.path.dirname(save_file))
+        if not os.path.exists(path):
+            os.makedirs(path) 
 
         file_size_dl = 0
         try:
-            with open(save_file, 'wb') as f:
+            with open(filename, 'wb') as f:
                 for buff in response.iter_content(chunk_size=16384):
                     f.write(buff)
         except Exception as e:
@@ -206,7 +232,17 @@ class CyberFlood:
         finally:
             response.close()
 
-        return save_file
+        return filename     
+
+    def _get_filters(self, url, args):
+        newurl = url
+
+        global pp
+        pp.pprint(args)
+
+        newargs = None
+
+        return newurl, newargs
 
 
     def _process_error(self, response):
@@ -227,7 +263,7 @@ class CyberFlood:
             errmsg = "An unspecified error occurred (" + response.status_code + ")"
         
         logging.error(errmsg)
-        raise Exception(errmsg)
+        raise Exception(errmsg)      
 
     def _convert_yaml_to_dict(self, inputfilename):        
 
@@ -252,10 +288,14 @@ class CyberFlood:
         self.commands = {}
 
         for path in self.api_spec["paths"].keys():
-            for verb in self.api_spec["paths"][path].keys():
+            for verb in self.api_spec["paths"][path].keys():                
                 command = CfCommand(self, path, verb, self.api_spec["paths"][path][verb])
 
-                self.commands[command.name] = command
+                # Some command names are used by more than one object type (key).
+                if command.name not in self.commands.keys():
+                    self.commands[command.name] = {}
+
+                self.commands[command.name][command.tag] = command
 
         return         
 
@@ -267,6 +307,12 @@ class CfCommand:
         self.path = path
         self.httpverb = httpverb
         self.definition = definition
+
+        # The "tags" differentiate the various commands with the same name:
+        # e.g. There is a "reboot" command for the "System" and "Devices".
+        #      /system/reboot
+        #      /devices/{deviceId}/reboot        
+        self.tag = definition["tags"][0]
 
         self.name = definition["operationId"]
         
@@ -286,12 +332,12 @@ class CfCommand:
         return
 
     @logging_decorator
-    def exec(self, payload=None, **kwargs):
+    def perform(self, payload=None, filters=None, **kwargs):
         path = self.resolve_path(**kwargs)
 
-        result = self.cf.command(self.httpverb, path, payload)
+        result = self.cf.exec(self.httpverb, path, payload, filters)
 
-        return result.json()        
+        return result
 
     def resolve_path(self, **kwargs):
         """Generate the command path by replacing the parameter "placeholders" names with 
