@@ -4,7 +4,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 # The next line is intentionally blank.
 
 __author__ = "Matthew Jefferson"
-__version__ = "1.0.0"
+__version__ = "0.0.1"
 
 # The previous line is intentionally blank.
 
@@ -63,7 +63,7 @@ __version__ = "1.0.0"
             cf.perform("getTestRunResult", testRunId=testrun["id"], testRunResultsId=testrunresults["id"])
 
     Modification History:
-    1.0.0 : 07/10/2020 - Matthew Jefferson
+    0.0.1 : 07/10/2020 - Matthew Jefferson
             -The initial code.
 
     :copyright: (c) 2020 by Matthew Jefferson.
