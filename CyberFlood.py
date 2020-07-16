@@ -4,7 +4,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 # The next line is intentionally blank.
 
 __author__ = "Matthew Jefferson"
-__version__ = "0.0.1"
+__version__ = "1.0.0"
 
 # The previous line is intentionally blank.
 
@@ -63,8 +63,11 @@ __version__ = "0.0.1"
             cf.perform("getTestRunResult", testRunId=testrun["id"], testRunResultsId=testrunresults["id"])
 
     Modification History:
+    1.0.0 : 07/16/2020 - Matthew Jefferson
+        -The code should be stable enough for release.
+
     0.0.1 : 07/10/2020 - Matthew Jefferson
-            -The initial code.
+        -The initial code.
 
     :copyright: (c) 2020 by Matthew Jefferson.
 """
@@ -340,7 +343,7 @@ class CyberFlood:
             logging.debug(str(response.headers.get))
             raise Exception("ERROR: Unknown response type (" + response.headers.get("content-type") + ").")
 
-        return return_value
+        return return_value 
 
     def _save_file(self, response, filename, directory=None):        
         """ Save a file attachment from a response to the current directory (or possibly a subdirectory).
@@ -398,7 +401,7 @@ class CyberFlood:
             if additionaldetails:
                 errmsg += "\n" + str(additionaldetails)
         else:
-            errmsg = "An unspecified error occurred (" + response.status_code + ")"
+            errmsg = "An unspecified error occurred (" + str(response.status_code) + ")"
         
         logging.error(errmsg)
         raise Exception(errmsg)      
