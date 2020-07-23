@@ -92,12 +92,8 @@ def get_results(testrun):
 pp = pprint.PrettyPrinter(indent=2)
 
 
-# cfcontroller = "10.140.99.128"
-# username = "matt.jefferson@spirent.com"
-# password = "spirent"
-
-cfcontroller = "americas-demo.appsec.spirent.com"
-username = "matthew.jefferson@spirent.com"
+cfcontroller = "10.140.99.128"
+username = "matt.jefferson@spirent.com"
 password = "spirent"
 
 print("Initializing the CyberFlood object...")
