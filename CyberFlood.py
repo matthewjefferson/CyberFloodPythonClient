@@ -63,6 +63,17 @@ __version__ = "1.0.0"
             cf.perform("getTestRunResult", testRunId=testrun["id"], testRunResultsId=testrunresults["id"])
 
     Modification History:
+    1.1.0 : 07/28/2020 - Matthew Jefferson
+        -CyberFlood version 20.4.3829 appears to break the dynamic download of the openapi.yaml file.
+         I've resolved this by allowing the user to download the file on their own and save it in the same
+         directory as the CyberFlood.py file.
+         To download the openapi.yaml file:
+            1. Go to the CyberFlood GUI
+            2. Click on the ? at the top-right
+            3. Select "RESTful API Help"
+            4. Click on "Download OpenAPI specification: Download" and save the file in the 
+               same directory as CyberFlood.py
+
     1.0.0 : 07/16/2020 - Matthew Jefferson
         -The code should be stable enough for release.
 
@@ -215,13 +226,29 @@ class CyberFlood:
             # Perform Commands are enabled. We need to download the OpenAPI.yaml file and 
             # generate the class objects for each command.
 
-            # Download the ReST API specification for the controller.
-            specfilename = self.get("/documentation/openapi.yaml")
-            self.api_spec = self._convert_yaml_to_dict(specfilename)
-            # We don't need the openapi.yaml file after this point.
-            os.remove(specfilename)
+            try:
+                # Download the ReST API specification for the controller.
+                specfilename = self.get("/documentation/openapi.yaml")            
+                self.api_spec = self._convert_yaml_to_dict(specfilename)
+                # We don't need the openapi.yaml file after this point.
+                os.remove(specfilename)
 
-            self._generate_classes()   
+                self._generate_classes()   
+            except Exception as e:
+                # The later versions of CyberFlood appear to have changed the openapi.yaml to point to some javascript.
+                # Check to see if a version of this file has been included with this code.
+                logging.info("Downloading the openapi.yaml file appreas to have failed. Attempting to find a local copy.")
+                path = os.path.dirname(__file__)
+                path = os.path.abspath(path)
+                specfilename = os.path.join(path, "openapi.yaml")
+                if os.path.isfile(specfilename):
+                    self.api_spec = self._convert_yaml_to_dict(specfilename)
+                    self._generate_classes()   
+                else:
+                    errmsg = specfilename + " does not exist."
+                    logging.info(errmsg)
+                    raise Exception(errmsg)
+
 
         return    
 
