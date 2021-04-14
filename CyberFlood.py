@@ -4,7 +4,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 # The next line is intentionally blank.
 
 __author__ = "Matthew Jefferson"
-__version__ = "1.0.0"
+__version__ = "1.1.1"
 
 # The previous line is intentionally blank.
 
@@ -63,6 +63,9 @@ __version__ = "1.0.0"
             cf.perform("getTestRunResult", testRunId=testrun["id"], testRunResultsId=testrunresults["id"])
 
     Modification History:
+    1.1.1 : 07/28/2020 - Matthew Jefferson
+        -Using safe_load() for YAML. The old load() method has been depricated.
+
     1.1.0 : 07/28/2020 - Matthew Jefferson
         -CyberFlood version 20.4.3829 appears to break the dynamic download of the openapi.yaml file.
          I've resolved this by allowing the user to download the file on their own and save it in the same
@@ -228,7 +231,7 @@ class CyberFlood:
 
             try:
                 # Download the ReST API specification for the controller.
-                specfilename = self.get("/documentation/openapi.yaml")            
+                specfilename = self.get("/documentation/openapi.yaml")                       
                 self.api_spec = self._convert_yaml_to_dict(specfilename)
                 # We don't need the openapi.yaml file after this point.
                 os.remove(specfilename)
@@ -237,7 +240,7 @@ class CyberFlood:
             except Exception as e:
                 # The later versions of CyberFlood appear to have changed the openapi.yaml to point to some javascript.
                 # Check to see if a version of this file has been included with this code.
-                logging.info("Downloading the openapi.yaml file appreas to have failed. Attempting to find a local copy.")
+                logging.info("Downloading the openapi.yaml file appears to have failed. Attempting to find a local copy.")
                 path = os.path.dirname(__file__)
                 path = os.path.abspath(path)
                 specfilename = os.path.join(path, "openapi.yaml")
@@ -440,7 +443,10 @@ class CyberFlood:
 
         try:
             with open(inputfilename, "r", encoding="utf-8") as yaml_file:
-                yamldict = yaml.load(yaml_file)
+                # The load() method has be depricated.
+                #yamldict = yaml.load(yaml_file)                
+                yamldict = yaml.safe_load(yaml_file)
+
         except yaml.YAMLError as exc:
             if hasattr(exc, 'problem_mark'):
                 mark = exc.problem_mark
