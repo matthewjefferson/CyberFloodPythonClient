@@ -4,7 +4,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 # The next line is intentionally blank.
 
 __author__ = "Matthew Jefferson"
-__version__ = "1.1.1"
+__version__ = "1.1.2"
 
 # The previous line is intentionally blank.
 
@@ -63,6 +63,9 @@ __version__ = "1.1.1"
             cf.perform("getTestRunResult", testRunId=testrun["id"], testRunResultsId=testrunresults["id"])
 
     Modification History:
+    1.1.2 : 05/04/2021 - Matthew Jefferson    
+        -Now able to download the openapi.yaml file again. Just using a new URL.
+
     1.1.1 : 07/28/2020 - Matthew Jefferson
         -Using safe_load() for YAML. The old load() method has been depricated.
 
@@ -231,7 +234,8 @@ class CyberFlood:
 
             try:
                 # Download the ReST API specification for the controller.
-                specfilename = self.get("/documentation/openapi.yaml")                       
+                #specfilename = self.get("/documentation/openapi.yaml")                             
+                specfilename = self.get("/client/openapi.yaml")                             
                 self.api_spec = self._convert_yaml_to_dict(specfilename)
                 # We don't need the openapi.yaml file after this point.
                 os.remove(specfilename)
@@ -346,6 +350,20 @@ class CyberFlood:
             self._process_error(response)
         
         return_value = None
+
+        # print("HERE")
+        # import pprint
+        # pp = pprint.PrettyPrinter(indent=2)
+        # pp.pprint(response.url)
+        # pp.pprint(response.status_code)
+        # pp.pprint(response.encoding)
+        # pp.pprint(response.headers)
+        # pp.pprint("Content=")
+        # print(response.content)
+
+        # print("======")
+        # print("Text:")
+        # print(response.text)
 
         # Process the response.
         content_disposition = response.headers.get("content-disposition")
