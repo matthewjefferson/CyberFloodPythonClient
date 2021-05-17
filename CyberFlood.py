@@ -4,7 +4,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 # The next line is intentionally blank.
 
 __author__ = "Matthew Jefferson"
-__version__ = "1.1.2"
+__version__ = "1.2.0"
 
 # The previous line is intentionally blank.
 
@@ -63,6 +63,10 @@ __version__ = "1.1.2"
             cf.perform("getTestRunResult", testRunId=testrun["id"], testRunResultsId=testrunresults["id"])
 
     Modification History:
+    1.2.0 : 05/17/2021 - Matthew Jefferson
+        -You can now specify multi-key filters with a "dash" delimiter.
+         e.g. "duration-lt" translates to "filter[duration][lt]".
+
     1.1.2 : 05/04/2021 - Matthew Jefferson    
         -Now able to download the openapi.yaml file again. Just using a new URL.
 
@@ -317,7 +321,7 @@ class CyberFlood:
 
         # Construct the complete URL.
         url = self.controller_address + url
-        url += self._add_filters(filters)
+        url += self._add_filters(filters)        
 
         # Construct the json_payload, which can be a combination of args and kwargs.
         payload = {}
@@ -333,10 +337,10 @@ class CyberFlood:
         if len(list(payload.keys())) > 0:
             json_payload = json.dumps(payload)
 
-        httpverb = httpverb.lower()
+        httpverb = httpverb.lower() 
 
         if httpverb == "get":
-            response = self.__session.get(url)
+            response = self.__session.get(url, data=json_payload, headers={'Content-Type': 'application/json'}, verify=False)
         elif httpverb == "post":            
             response = self.__session.post(url, data=json_payload, headers={'Content-Type': 'application/json'}, verify=False)
         elif httpverb == "put":
@@ -422,12 +426,22 @@ class CyberFlood:
         """Convert any filters, specified as a dictionary by the user, into a string for a URL.
         """  
         filtersurl = ""
-        if filters:            
-            for key in filters.keys():
+        if filters:   
+            # The user may specify a multi-key filter with a "dash" delimiter.
+            # e.g. duration-lt translates to filter[duration][lt].
+
+            for key in filters.keys():                
                 if filtersurl != "":
                     filtersurl += "&"
 
-                filtersurl += "filter[" + str(key) + "]=" + str(filters[key])
+                filtersurl += "filter"
+                for subfilter in key.split("-"):
+                    filtersurl += "[" + subfilter + "]"
+
+                #value = requests.utils.quote(filters[key])
+                value = filters[key]
+                filtersurl += "=" + str(value)
+
             filtersurl = "?" + filtersurl
 
         return filtersurl
