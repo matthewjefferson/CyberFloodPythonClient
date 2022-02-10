@@ -4,7 +4,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 # The next line is intentionally blank.
 
 __author__ = "Matthew Jefferson"
-__version__ = "1.2.0"
+__version__ = "1.2.1"
 
 # The previous line is intentionally blank.
 
@@ -63,6 +63,9 @@ __version__ = "1.2.0"
             cf.perform("getTestRunResult", testRunId=testrun["id"], testRunResultsId=testrunresults["id"])
 
     Modification History:
+    1.2.1 : 02/10/2022 - Matthew Jefferson
+        -Fixed a exception that triggered when deleting anything.
+
     1.2.0 : 05/17/2021 - Matthew Jefferson
         -You can now specify multi-key filters with a "dash" delimiter.
          e.g. "duration-lt" translates to "filter[duration][lt]".
@@ -358,10 +361,11 @@ class CyberFlood:
         # print("HERE")
         # import pprint
         # pp = pprint.PrettyPrinter(indent=2)
-        # pp.pprint(response.url)
+        # # pp.pprint(response.url)
         # pp.pprint(response.status_code)
-        # pp.pprint(response.encoding)
+        # # pp.pprint(response.encoding)
         # pp.pprint(response.headers)
+        # pp.pprint(response)
         # pp.pprint("Content=")
         # print(response.content)
 
@@ -372,7 +376,10 @@ class CyberFlood:
         # Process the response.
         content_disposition = response.headers.get("content-disposition")
 
-        if response.headers.get("content-type") == "application/json":
+        if response.status_code == 204:
+            # This happens with DELETE.
+            return_value = None
+        elif response.headers.get("content-type") == "application/json":
             return_value = response.json()
         elif content_disposition and re.match("attachment", content_disposition, flags=re.I):
             # The response contained an attachment.
@@ -393,7 +400,7 @@ class CyberFlood:
         else:
             # Whoops...looks like we got a response that wasn't anticipated.
             logging.debug(str(response.headers.get))
-            raise Exception("ERROR: Unknown response type (" + response.headers.get("content-type") + ").")
+            raise Exception("ERROR: Unknown response type (" + str(response.headers.get("content-type")) + ").")
 
         return return_value 
 
