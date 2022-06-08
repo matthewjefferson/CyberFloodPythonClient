@@ -4,7 +4,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 # The next line is intentionally blank.
 
 __author__ = "Matthew Jefferson"
-__version__ = "1.2.1"
+__version__ = "1.3.0"
 
 # The previous line is intentionally blank.
 
@@ -63,6 +63,11 @@ __version__ = "1.2.1"
             cf.perform("getTestRunResult", testRunId=testrun["id"], testRunResultsId=testrunresults["id"])
 
     Modification History:
+    1.3.0 : 06/08/2022 - Matthew Jefferson
+        -Added support for importing test cases with the "createTestImport" command. 
+         Use the "upload_filename" argument for the archive.
+         e.g. cf.perform("createTestImport", type="avn", upload_filename="test.zip")
+
     1.2.1 : 02/10/2022 - Matthew Jefferson
         -Fixed a exception that triggered when deleting anything.
 
@@ -317,9 +322,11 @@ class CyberFlood:
 
         return result    
 
-    def exec(self, httpverb, url, *args, filters=None, **kwargs):  
+    def exec(self, httpverb, url, *args, filters=None, upload_filename=None, **kwargs):  
         """Send the specified HTTP request to the CyberFlood ReST API.    
         The filter argument is special. It is a dictionary of filters that must be added to the URL.  
+
+        Use the "upload_filename" argument to upload files to the server.
         """
 
         # Construct the complete URL.
@@ -342,7 +349,12 @@ class CyberFlood:
 
         httpverb = httpverb.lower() 
 
-        if httpverb == "get":
+        if upload_filename: 
+            filedata = open(upload_filename, "rb")
+            filejson = {"file": filedata}
+            response = self.__session.post(url, files=filejson, data=payload, verify=False)
+
+        elif httpverb == "get":
             response = self.__session.get(url, data=json_payload, headers={'Content-Type': 'application/json'}, verify=False)
         elif httpverb == "post":            
             response = self.__session.post(url, data=json_payload, headers={'Content-Type': 'application/json'}, verify=False)
@@ -427,7 +439,7 @@ class CyberFlood:
         finally:
             response.close()
 
-        return filename     
+        return filename         
 
     def _add_filters(self, filters):      
         """Convert any filters, specified as a dictionary by the user, into a string for a URL.
