@@ -4,7 +4,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 # The next line is intentionally blank.
 
 __author__ = "Matthew Jefferson"
-__version__ = "1.3.0"
+__version__ = "1.4.0"
 
 # The previous line is intentionally blank.
 
@@ -63,6 +63,10 @@ __version__ = "1.3.0"
             cf.perform("getTestRunResult", testRunId=testrun["id"], testRunResultsId=testrunresults["id"])
 
     Modification History:
+    1.4.0 : 08/15/2022 - Matthew Jefferson
+        -Added the use_yaml_cache flag when initializing the CyberFlood class. This allow you to
+         explicitly specify if you want to download the OpenApi.yaml file, or just use a cached copy.
+
     1.3.0 : 06/08/2022 - Matthew Jefferson
         -Added support for importing test cases with the "createTestImport" command. 
          Use the "upload_filename" argument for the archive.
@@ -174,7 +178,7 @@ def deepupdate(target, src):
 
 #==============================================================================
 class CyberFlood:    
-    def __init__(self, username, password, controller_address, perform_commands=True, log_level="INFO", log_path=None):
+    def __init__(self, username, password, controller_address, perform_commands=True, use_yaml_cache=True, log_level="INFO", log_path=None):
 
         requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
@@ -244,30 +248,45 @@ class CyberFlood:
             # Perform Commands are enabled. We need to download the OpenAPI.yaml file and 
             # generate the class objects for each command.
 
-            try:
-                # Download the ReST API specification for the controller.
-                #specfilename = self.get("/documentation/openapi.yaml")                             
-                specfilename = self.get("/client/openapi.yaml")                             
-                self.api_spec = self._convert_yaml_to_dict(specfilename)
-                # We don't need the openapi.yaml file after this point.
-                os.remove(specfilename)
+            specfilename = None
+            if use_yaml_cache:               
+                logging.info("Attempting to use the cached OpenAPI.yaml file....")
 
-                self._generate_classes()   
-            except Exception as e:
-                # The later versions of CyberFlood appear to have changed the openapi.yaml to point to some javascript.
-                # Check to see if a version of this file has been included with this code.
-                logging.info("Downloading the openapi.yaml file appears to have failed. Attempting to find a local copy.")
                 path = os.path.dirname(__file__)
                 path = os.path.abspath(path)
                 specfilename = os.path.join(path, "openapi.yaml")
-                if os.path.isfile(specfilename):
-                    self.api_spec = self._convert_yaml_to_dict(specfilename)
-                    self._generate_classes()   
-                else:
-                    errmsg = specfilename + " does not exist."
-                    logging.info(errmsg)
-                    raise Exception(errmsg)
 
+                if not os.path.isfile(specfilename):
+                    # The OpenAPI.yaml was not found, so try to download from the controller.
+                    logging.info("Unable to find a cached version of the OpenAPI.yaml file " + specfilename + ". Attempting to download from controller..." )
+                    try:
+                        # Download the ReST API specification for the controller.
+                        #specfilename = self.get("/documentation/openapi.yaml")                             
+                        specfilename = self.get("/client/openapi.yaml")                             
+
+                    except Exception as e:
+                        errmsg = "Unable to download the OpenAPI.yaml file.\n" + str(e)
+                        logging.warn(errmsg)
+                else:
+                    logging.info("Found the cached OpenAPI.yaml file: " + specfilename)
+
+            else:
+                # Download the OpenAPI.yaml file.
+                try:
+                    # Download the ReST API specification for the controller.
+                    #specfilename = self.get("/documentation/openapi.yaml")        
+                    specfilename = self.get("/client/openapi.yaml")                             
+
+                except Exception as e:
+                    raise Exception("Unable to download the OpenAPI.yaml file from the controller. This file is required for 'perform' commands.\n" + str(e))
+            
+            if os.path.isfile(specfilename):            
+                self.api_spec = self._convert_yaml_to_dict(specfilename)
+                self._generate_classes()   
+            else:
+                errmsg = "Unable to locate the OpenAPI.yaml file " + specfilename + ". This file is required for 'perform' commands."
+                logging.error(errmsg)
+                raise Exception(errmsg)                
 
         return    
 
