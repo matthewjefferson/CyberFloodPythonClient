@@ -4,7 +4,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 # The next line is intentionally blank.
 
 __author__ = "Matthew Jefferson"
-__version__ = "1.4.0"
+__version__ = "1.4.3"
 
 # The previous line is intentionally blank.
 
@@ -63,6 +63,17 @@ __version__ = "1.4.0"
             cf.perform("getTestRunResult", testRunId=testrun["id"], testRunResultsId=testrunresults["id"])
 
     Modification History:
+    1.4.3 : 01/18/2023 - Matthew Jefferson
+        -Now raising an exception if the user authorization fails. It was failing silently before.
+
+    1.4.2 : 09/15/2022 - Matthew Jefferson
+        -Reworked the use_yaml_cache option. It now works much better than before.
+
+    1.4.1 : 09/12/2022 - Matthew Jefferson
+        -Added the CyberFlood Class variable "object_types". This dictionary contains a list of all
+         CyberFlood object types (e.g. "Subnet", "Traffic Mixes", etc), and their corresponding perform commands.
+         This is only applicable when perform commands are enabled.
+
     1.4.0 : 08/15/2022 - Matthew Jefferson
         -Added the use_yaml_cache flag when initializing the CyberFlood class. This allow you to
          explicitly specify if you want to download the OpenApi.yaml file, or just use a cached copy.
@@ -125,7 +136,8 @@ import functools
 import copy
 
 # pickle and yaml are required for processing the OpenAPI yaml file.
-import pickle
+#import pickle
+#import pylibyaml
 import yaml
 
 #==============================================================================
@@ -191,6 +203,11 @@ class CyberFlood:
         # Enabling the "Perform Commands" adds a fixed amount initialization overhead (time) for the CyberFlood API.
         self.perform_commands = perform_commands
 
+        # This dictionary contains an entry for each perform command, if "perform_commands" is True.
+        self.commands = {}
+        # This dictionary contains an entry for each CyberFlood object type, and a list of each command that can be used with that object.
+        self.object_types = {}
+
         self.__bearerToken = None
         #self.__isLogged = False
         self.__session = requests.session()
@@ -243,50 +260,16 @@ class CyberFlood:
         if response.status_code == 201:
             self.__bearerToken = json.loads(response.text)['token']
             self.__session.headers.update(Authorization='Bearer ' + self.__bearerToken)
+        else:
+            errmsg = "Authorization failed. Please check user credentials."
+            logging.error(errmsg)
+            raise Exception(errmsg)              
 
         if self.perform_commands:
             # Perform Commands are enabled. We need to download the OpenAPI.yaml file and 
             # generate the class objects for each command.
+            self._enable_perform_commands(use_cached_commands=use_yaml_cache)
 
-            specfilename = None
-            if use_yaml_cache:               
-                logging.info("Attempting to use the cached OpenAPI.yaml file....")
-
-                path = os.path.dirname(__file__)
-                path = os.path.abspath(path)
-                specfilename = os.path.join(path, "openapi.yaml")
-
-                if not os.path.isfile(specfilename):
-                    # The OpenAPI.yaml was not found, so try to download from the controller.
-                    logging.info("Unable to find a cached version of the OpenAPI.yaml file " + specfilename + ". Attempting to download from controller..." )
-                    try:
-                        # Download the ReST API specification for the controller.
-                        #specfilename = self.get("/documentation/openapi.yaml")                             
-                        specfilename = self.get("/client/openapi.yaml")                             
-
-                    except Exception as e:
-                        errmsg = "Unable to download the OpenAPI.yaml file.\n" + str(e)
-                        logging.warn(errmsg)
-                else:
-                    logging.info("Found the cached OpenAPI.yaml file: " + specfilename)
-
-            else:
-                # Download the OpenAPI.yaml file.
-                try:
-                    # Download the ReST API specification for the controller.
-                    #specfilename = self.get("/documentation/openapi.yaml")        
-                    specfilename = self.get("/client/openapi.yaml")                             
-
-                except Exception as e:
-                    raise Exception("Unable to download the OpenAPI.yaml file from the controller. This file is required for 'perform' commands.\n" + str(e))
-            
-            if os.path.isfile(specfilename):            
-                self.api_spec = self._convert_yaml_to_dict(specfilename)
-                self._generate_classes()   
-            else:
-                errmsg = "Unable to locate the OpenAPI.yaml file " + specfilename + ". This file is required for 'perform' commands."
-                logging.error(errmsg)
-                raise Exception(errmsg)                
 
         return    
 
@@ -484,7 +467,6 @@ class CyberFlood:
 
         return filtersurl
 
-
     def _process_error(self, response):
         """Handle error responses from the CyberFlood ReST API.
         """
@@ -504,7 +486,74 @@ class CyberFlood:
             errmsg = "An unspecified error occurred (" + str(response.status_code) + ")"
         
         logging.error(errmsg)
-        raise Exception(errmsg)      
+        raise Exception(errmsg)     
+
+    def _enable_perform_commands(self, use_cached_commands):
+        """Generate CyberFlood "Perform" command classes, based on the OpenAPI.yaml spec.
+           There is an option to use the "cached" version of these commands, because parsing the YAML 
+           file is pretty slow. 
+           When caching is enabled, the dictionary that is generated from the OpenAPI.yaml file is saved
+           to disk as a JSON file.
+        """
+
+        path = os.path.dirname(__file__)
+        path = os.path.abspath(path)
+
+        # Only use the cached commands if they match CyberFlood controller version.    
+        controller = self.get("/system/version")            
+        # "version": "22.4.1030"                                                
+
+        cached_commands_filename = os.path.join(path, "perform_commands_cache_" + controller["version"] + ".json")
+        cached_commands_filename = os.path.abspath(cached_commands_filename)
+
+        api_spec = None
+        if use_cached_commands:                           
+            logging.info("Attempting to use the cached OpenAPI.yaml file....")
+
+            if os.path.isfile(cached_commands_filename):            
+                # Okay, the file exists, so load the cached api_spec dictionary.
+                with open(cached_commands_filename) as f:
+                    api_spec = json.load(f)
+            else:
+                # The cached commands were not found. This means we'll need to attempt to download the OpenAPI.yaml file.
+                errmsg = "Unable to locate the cached commands file: " + cached_commands_filename
+                logging.warn(errmsg)                    
+
+        if not api_spec:
+            # Download the OpenAPI.yaml file.
+            try:
+                # Download the ReST API specification for the controller.
+                #specfilename = self.get("/documentation/openapi.yaml")        
+                spec_filename = self.get("/client/openapi.yaml")                             
+
+            except Exception as e:
+                raise Exception("Unable to download the OpenAPI.yaml file from the controller. This file is required for 'perform' commands.\n" + str(e))
+        
+            if os.path.isfile(spec_filename):            
+                #print("DEBUG ONLY!!!!!!")                   
+                #print("Start=", datetime.datetime.now().strftime("%H:%M:%S"))
+                api_spec = self._convert_yaml_to_dict(spec_filename)
+                #print("Generate=", datetime.datetime.now().strftime("%H:%M:%S"))
+
+                if use_cached_commands:
+                    # NOTE: I'm a bit torn here. I could always save the cached commands to disk, but that might be 
+                    #       a problem for logistics. Instead, I'm only saving it to disk if the user is using cached commands.
+                    with open(cached_commands_filename, 'w') as f:
+                        json.dump(api_spec, f)
+            else:
+                errmsg = "Unable to locate the OpenAPI.yaml file " + specfilename + ". This file is required for 'perform' commands."
+                logging.error(errmsg)
+                raise Exception(errmsg)              
+
+        if api_spec:
+            self._generate_classes(api_spec)   
+        else:
+            errmsg = "Unable to obtain the CyberFlood API specification. Try disabling perform_commands."
+            logging.error(errmsg)
+            raise Exception(errmsg)  
+        
+        return
+
 
     def _convert_yaml_to_dict(self, inputfilename):        
         """Open and convert the OpenAPI.yaml file to a Python dictionary.
@@ -514,7 +563,12 @@ class CyberFlood:
         try:
             with open(inputfilename, "r", encoding="utf-8") as yaml_file:
                 # The load() method has be depricated.
-                #yamldict = yaml.load(yaml_file)                
+                #yamldict = load(yaml_file, Loader=Loader)                
+                
+                # NOTE: If you are unsatified with the speed of this method, consider using the LibYAML parser instead.
+                #       The code here doesn't change. You just need to import the LibYAML parser instead. 
+                #       The trick is that you'll likely need to download and build from source. I don't think pip will work.
+                #       https://pypi.org/project/pylibyaml/
                 yamldict = yaml.safe_load(yaml_file)
 
         except yaml.YAMLError as exc:
@@ -528,20 +582,39 @@ class CyberFlood:
 
         return yamldict
 
-    def _generate_classes(self):
+    def _generate_classes(self, api_spec):
         """The method instantiates the perform commands, based on the OpenAPI.yaml file from the controller.
         """        
         self.commands = {}
 
-        for path in self.api_spec["paths"].keys():
-            for verb in self.api_spec["paths"][path].keys():                
-                command = CfCommand(self, path, verb, self.api_spec["paths"][path][verb])
+        # Keep track of the commands available for each object type.
+        # e.g. 'Subnets': { 'createIpv4Subnet': <CyberFlood.CfCommand object at 0x103659250>,
+        #                   'createIpv6Subnet': <CyberFlood.CfCommand object at 0x103659190>,
+        #                   'deleteIpv4Subnet': <CyberFlood.CfCommand object at 0x103659370>,
+        #                   'deleteIpv6Subnet': <CyberFlood.CfCommand object at 0x1036591f0>,
+        #                   'getIpv4Subnet': <CyberFlood.CfCommand object at 0x103659130>,
+        #                   'getIpv6Subnet': <CyberFlood.CfCommand object at 0x103659430>,
+        #                   'ipV4Replicate': <CyberFlood.CfCommand object at 0x103659340>,
+        #                   'listIpv4Subnets': <CyberFlood.CfCommand object at 0x1036592b0>,
+        #                   'listIpv6Subnets': <CyberFlood.CfCommand object at 0x103659670>,
+        #                   'updateIpv4Subnet': <CyberFlood.CfCommand object at 0x103659100>,
+        #                   'updateIpv6Subnet': <CyberFlood.CfCommand object at 0x1036593d0>},
+        self.object_types = {}
+
+        for path in api_spec["paths"].keys():
+            for verb in api_spec["paths"][path].keys():                
+                command = CfCommand(self, path, verb, api_spec["paths"][path][verb])
 
                 # Some command names are used by more than one object type (key).
                 if command.name not in self.commands.keys():
                     self.commands[command.name] = {}
 
                 self.commands[command.name][command.tag] = command
+
+                if command.tag not in self.object_types:
+                    self.object_types[command.tag] = {}
+                
+                self.object_types[command.tag][command.name] = command
 
         return         
 
