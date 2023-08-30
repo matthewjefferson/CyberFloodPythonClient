@@ -86,6 +86,15 @@ def get_results(testrun):
 
     return results
 
+def get_json(filename):
+    # Read JSON params and store in dictionary
+    file_dict = {}
+    with open(filename, 'r') as f:
+        file_dict = json.load(f)
+    #data.close()
+
+    return file_dict  
+
 
 #==============================================================================
 
