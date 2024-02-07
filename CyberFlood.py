@@ -137,6 +137,8 @@ import requests
 #  import pylibyaml
 import yaml
 
+LOGGER = logging.getLogger(__name__)
+
 
 # =============================================================================
 def logging_decorator(func):
@@ -144,12 +146,12 @@ def logging_decorator(func):
     """
     @functools.wraps(func)
     def wrapper_decorator(*args, **kwargs):
-        logging.debug("ENTER=%s args=%s kwargs=%s", str(func), str(args),
-                      str(kwargs))
+        LOGGER.debug("ENTER=%s args=%s kwargs=%s", str(func), str(args),
+                     str(kwargs))
 
         value = func(*args, **kwargs)
 
-        logging.debug("LEAVE=%s returns=%s", str(func), str(value))
+        LOGGER.debug("LEAVE=%s returns=%s", str(func), str(value))
 
         return value
     return wrapper_decorator
@@ -247,10 +249,28 @@ class CyberFlood:
         else:
             self.log_level = logging.INFO
 
-        logging.basicConfig(filename=self.log_file, filemode="w", level=self.log_level, format="%(asctime)s %(message)s")
+        ##
+        # Create stream and file logger assuming this class will be treated
+        # as a singleton.
+        #
+        # log to stream
+        LOGGER.setLevel(self.log_level)
+        formatter = logging.Formatter("%(asctime)s %(message)s")
+
+        stream_logger = logging.StreamHandler()
+        stream_logger.setLevel(self.log_level)
+        stream_logger.setFormatter(formatter)
+        LOGGER.addHandler(stream_logger)
+
+        # log to file
+        file_logger = logging.FileHandler(self.log_file, mode="w")
+        file_logger.setLevel(self.log_level)
+        file_logger.setFormatter(formatter)
+        LOGGER.addHandler(file_logger)
+        ##
 
         # The logger is now ready.
-        logging.info("Executing __init__: %s", str(arguments))
+        LOGGER.info("Executing __init__: %s", str(arguments))
 
         requests_log = logging.getLogger("requests.packages.urllib3")
         requests_log.propagate = True
@@ -263,7 +283,7 @@ class CyberFlood:
             self.__session.headers.update(Authorization='Bearer ' + self.__bearerToken)
         else:
             errmsg = "Authorization failed. Please check user credentials."
-            logging.error(errmsg)
+            LOGGER.error(errmsg)
             raise Exception(errmsg)
 
         if self.perform_commands:
@@ -411,7 +431,7 @@ class CyberFlood:
             return_value = self._save_file(response, filename)
         else:
             # Whoops...looks like we got a response that wasn't anticipated.
-            logging.debug(str(response.headers.get))
+            LOGGER.debug(str(response.headers.get))
             raise Exception("ERROR: Unknown response type (" + str(response.headers.get("content-type")) + ").")
 
         return return_value
@@ -482,7 +502,7 @@ class CyberFlood:
         else:
             errmsg = "An unspecified error occurred (" + str(response.status_code) + ")"
 
-        logging.error(errmsg)
+        LOGGER.error(errmsg)
         raise Exception(errmsg)
 
     def _enable_perform_commands(self, use_cached_commands):
@@ -505,7 +525,7 @@ class CyberFlood:
 
         api_spec = None
         if use_cached_commands:
-            logging.info("Attempting to use the cached OpenAPI.yaml file....")
+            LOGGER.info("Attempting to use the cached OpenAPI.yaml file....")
 
             if os.path.isfile(cached_commands_filename):
                 # Okay, the file exists, so load the cached api_spec dictionary.
@@ -514,7 +534,7 @@ class CyberFlood:
             else:
                 # The cached commands were not found. This means we'll need to attempt to download the OpenAPI.yaml file.
                 errmsg = "Unable to locate the cached commands file: " + cached_commands_filename
-                logging.warning(errmsg)
+                LOGGER.warning(errmsg)
 
         if not api_spec:
             # Download the OpenAPI.yaml file.
@@ -539,14 +559,14 @@ class CyberFlood:
                         json.dump(api_spec, f)
             else:
                 errmsg = "Unable to locate the OpenAPI.yaml file " + spec_filename + ". This file is required for 'perform' commands."
-                logging.error(errmsg)
+                LOGGER.error(errmsg)
                 raise Exception(errmsg)
 
         if api_spec:
             self._generate_classes(api_spec)
         else:
             errmsg = "Unable to obtain the CyberFlood API specification. Try disabling perform_commands."
-            logging.error(errmsg)
+            LOGGER.error(errmsg)
             raise Exception(errmsg)
 
     def _convert_yaml_to_dict(self, inputfilename):
@@ -571,7 +591,7 @@ class CyberFlood:
                 print("Error position: (%s:%s)" % (mark.line + 1, mark.column + 1))
             else:
                 errmsg = "Unexpected error while parsing the YAML:", sys.exc_info()[1]
-                logging.error(errmsg)
+                LOGGER.error(errmsg)
                 raise Exception(errmsg)
 
         return yamldict
